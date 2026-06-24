@@ -3,10 +3,8 @@
 .env.local
 .env.*.local
 
-# Databases
-*.db
-*.sqlite
-*.sqlite3
+# Databases — only exclude root-level db, jarvis_bot/memory.db is committed intentionally
+/memory.db
 
 # Python
 __pycache__/
