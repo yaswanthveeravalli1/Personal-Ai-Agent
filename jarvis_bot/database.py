@@ -1,7 +1,9 @@
 import sqlite3
 import numpy as np
+import os
 
-DB_FILE = "memory.db"
+# Use path relative to this script file so it works from any working directory
+DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memory.db")
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
