@@ -8,6 +8,7 @@ import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
 
@@ -24,15 +25,19 @@ def run_dummy_server():
     print(f"[Server] Health check server running on port {port}", flush=True)
     server.serve_forever()
 
+
 # Start health check server immediately so Render can detect the open port
 t = threading.Thread(target=run_dummy_server, daemon=True)
 t.start()
 t.join(timeout=1)  # Give the server 1 second to bind before bot starts
 
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    reply = generate_reply(user_id, update.message.text)
+    # Run blocking AI call in a thread so it doesn't freeze the event loop
+    reply = await asyncio.to_thread(generate_reply, user_id, update.message.text)
     await update.message.reply_text(reply)
+
 
 async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -40,19 +45,20 @@ async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /forget <keyword>")
         return
     keyword = " ".join(context.args)
-    removed = forget(user_id, keyword)
+    removed = await asyncio.to_thread(forget, user_id, keyword)
     msg = f"Removed memory matching: {keyword}" if removed else f"No memory found matching: {keyword}"
     await update.message.reply_text(msg)
 
-async def main():
-    app = ApplicationBuilder().token(config.TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("forget", forget_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("[Bot] Starting Telegram polling...", flush=True)
-    await app.run_polling()
 
 if __name__ == "__main__":
     # Explicitly create and set event loop — required for Python 3.14+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(main())
+
+    app = ApplicationBuilder().token(config.TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("forget", forget_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("[Bot] Starting Telegram polling...", flush=True)
+    # run_polling() is synchronous — do NOT await it
+    app.run_polling()
