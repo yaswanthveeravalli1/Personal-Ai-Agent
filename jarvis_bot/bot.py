@@ -4,23 +4,30 @@ from ai import generate_reply
 from memory import forget
 import config
 import os
+import asyncio
 import threading
-from http.server import SimpleHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
-    class HealthCheckHandler(SimpleHTTPRequestHandler):
+
+    class HealthCheckHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
             self.wfile.write(b"OK")
         def log_message(self, format, *args):
-            pass # Suppress logging to keep console clean
+            pass  # suppress default logging
 
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    print(f"[Server] Starting dummy server on port {port} for Render health checks...", flush=True)
+    print(f"[Server] Health check server running on port {port}", flush=True)
     server.serve_forever()
+
+# Start health check server immediately so Render can detect the open port
+t = threading.Thread(target=run_dummy_server, daemon=True)
+t.start()
+t.join(timeout=1)  # Give the server 1 second to bind before bot starts
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -37,11 +44,15 @@ async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = f"Removed memory matching: {keyword}" if removed else f"No memory found matching: {keyword}"
     await update.message.reply_text(msg)
 
-app = ApplicationBuilder().token(config.TELEGRAM_TOKEN).build()
-app.add_handler(CommandHandler("forget", forget_command))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+async def main():
+    app = ApplicationBuilder().token(config.TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("forget", forget_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("[Bot] Starting Telegram polling...", flush=True)
+    await app.run_polling()
 
-# Start dummy web server for Render health checks
-threading.Thread(target=run_dummy_server, daemon=True).start()
-
-app.run_polling()
+if __name__ == "__main__":
+    # Explicitly create and set event loop — required for Python 3.14+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
